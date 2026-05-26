@@ -1,15 +1,18 @@
 import os
 import smtplib
+import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 
 JST = timezone(timedelta(hours=9))
 DEFAULT_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.0-flash"
+MAX_GEMINI_ATTEMPTS = 3
 REQUIRED_ENV_VARS = (
     "GEMINI_API_KEY",
     "SMTP_HOST",
@@ -80,15 +83,19 @@ Claude
 """
 
 
-def generate_news() -> str:
-    api_key = require_env("GEMINI_API_KEY")
-    model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+def parse_model_list() -> list[str]:
+    configured = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+    models = [model.strip() for model in configured.split(",") if model.strip()]
+    if FALLBACK_MODEL not in models:
+        models.append(FALLBACK_MODEL)
+    return models
 
-    client = genai.Client(api_key=api_key)
+
+def generate_with_model(client: genai.Client, model: str, prompt: str) -> str:
     grounding_tool = types.Tool(google_search=types.GoogleSearch())
     response = client.models.generate_content(
         model=model,
-        contents=build_prompt(),
+        contents=prompt,
         config=types.GenerateContentConfig(
             tools=[grounding_tool],
             temperature=0.2,
@@ -97,8 +104,44 @@ def generate_news() -> str:
 
     text = getattr(response, "text", None)
     if not text:
-        raise RuntimeError("Gemini returned an empty response.")
+        raise RuntimeError(f"Gemini returned an empty response with model: {model}")
     return text.strip()
+
+
+def is_retryable_gemini_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code in {429, 500, 502, 503, 504}:
+        return True
+
+    message = str(exc).lower()
+    return any(token in message for token in ("unavailable", "overloaded", "rate limit"))
+
+
+def generate_news() -> str:
+    api_key = require_env("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+    prompt = build_prompt()
+    last_error: Exception | None = None
+
+    for model in parse_model_list():
+        for attempt in range(1, MAX_GEMINI_ATTEMPTS + 1):
+            try:
+                print(f"Generating news with {model} (attempt {attempt}/{MAX_GEMINI_ATTEMPTS})...")
+                return generate_with_model(client, model, prompt)
+            except errors.APIError as exc:
+                last_error = exc
+                if not is_retryable_gemini_error(exc) or attempt == MAX_GEMINI_ATTEMPTS:
+                    print(f"Gemini model {model} failed: {exc}")
+                    break
+
+                delay_seconds = 20 * attempt
+                print(
+                    f"Gemini model {model} is temporarily unavailable; "
+                    f"retrying in {delay_seconds} seconds."
+                )
+                time.sleep(delay_seconds)
+
+    raise RuntimeError("Gemini news generation failed after retries and fallback model.") from last_error
 
 
 def build_email(body: str) -> EmailMessage:
