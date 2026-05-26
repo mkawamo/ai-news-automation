@@ -9,6 +9,16 @@ Gemini API with Google Search grounding is used to summarize the last 24 hours o
 - `.env.example`: Local environment variable template.
 - `.github/workflows/daily_news.yml`: Runs every day at 07:00 JST.
 
+## Model
+
+The default model is `gemini-3.5-flash`. If the model is temporarily unavailable, the script retries and then falls back to `gemini-2.5-flash` and `gemini-2.0-flash`.
+
+To override the model list, add a repository variable named `GEMINI_MODEL`. Multiple models can be comma-separated:
+
+```text
+GEMINI_MODEL=gemini-3.5-flash,gemini-2.5-flash,gemini-2.0-flash
+```
+
 ## GitHub Actions setup
 
 Add these repository secrets in `Settings -> Secrets and variables -> Actions`:
@@ -41,7 +51,7 @@ SMTP_USE_SSL=false
 Optional repository variables:
 
 ```text
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 MAIL_SUBJECT=AIニュース日次まとめ
 ```
 
