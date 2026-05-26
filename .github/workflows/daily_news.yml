@@ -22,6 +22,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate required secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: |
+          missing=0
+          for name in GEMINI_API_KEY SMTP_HOST SMTP_USER SMTP_PASSWORD MAIL_FROM MAIL_TO; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing GitHub Secret::$name is not set. Add it in Settings > Secrets and variables > Actions."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Send daily AI news
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
