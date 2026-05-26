@@ -10,8 +10,8 @@ from google.genai import errors, types
 
 
 JST = timezone(timedelta(hours=9))
-DEFAULT_MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
+FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash")
 MAX_GEMINI_ATTEMPTS = 3
 REQUIRED_ENV_VARS = (
     "GEMINI_API_KEY",
@@ -86,8 +86,9 @@ Claude
 def parse_model_list() -> list[str]:
     configured = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     models = [model.strip() for model in configured.split(",") if model.strip()]
-    if FALLBACK_MODEL not in models:
-        models.append(FALLBACK_MODEL)
+    for fallback_model in FALLBACK_MODELS:
+        if fallback_model not in models:
+            models.append(fallback_model)
     return models
 
 
@@ -141,7 +142,7 @@ def generate_news() -> str:
                 )
                 time.sleep(delay_seconds)
 
-    raise RuntimeError("Gemini news generation failed after retries and fallback model.") from last_error
+    raise RuntimeError("Gemini news generation failed after retries and fallback models.") from last_error
 
 
 def build_email(body: str) -> EmailMessage:
