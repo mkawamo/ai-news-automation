@@ -45,6 +45,18 @@ GEMINI_MODEL=gemini-2.5-flash
 MAIL_SUBJECT=AIニュース日次まとめ
 ```
 
+## Troubleshooting
+
+If a workflow run fails with `Missing required environment variable: GEMINI_API_KEY` or `Missing GitHub Secret`, the required repository secrets are not registered or their names do not exactly match.
+
+Open this repository page and add the missing values:
+
+```text
+Settings -> Secrets and variables -> Actions -> Repository secrets
+```
+
+Secret names are case-sensitive. For example, `GEMINI_API_KEY` is valid, but `Gemini_API_KEY` is not.
+
 ## Local run
 
 ```bash
