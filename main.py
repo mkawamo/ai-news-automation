@@ -10,6 +10,24 @@ from google.genai import types
 
 JST = timezone(timedelta(hours=9))
 DEFAULT_MODEL = "gemini-2.5-flash"
+REQUIRED_ENV_VARS = (
+    "GEMINI_API_KEY",
+    "SMTP_HOST",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
+    "MAIL_FROM",
+    "MAIL_TO",
+)
+
+
+def validate_required_env() -> None:
+    missing = [name for name in REQUIRED_ENV_VARS if not os.getenv(name)]
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            "Missing required environment variables: "
+            f"{joined}. Add them as GitHub Actions repository secrets."
+        )
 
 
 def require_env(name: str) -> str:
@@ -102,28 +120,27 @@ def build_email(body: str) -> EmailMessage:
 def send_email(message: EmailMessage) -> None:
     host = require_env("SMTP_HOST")
     port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASSWORD")
+    user = require_env("SMTP_USER")
+    password = require_env("SMTP_PASSWORD")
     use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() in {"1", "true", "yes"}
     use_tls = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes"}
 
     if use_ssl:
         with smtplib.SMTP_SSL(host, port) as smtp:
-            if user and password:
-                smtp.login(user, password)
+            smtp.login(user, password)
             smtp.send_message(message)
         return
 
     with smtplib.SMTP(host, port) as smtp:
         if use_tls:
             smtp.starttls()
-        if user and password:
-            smtp.login(user, password)
+        smtp.login(user, password)
         smtp.send_message(message)
 
 
 def main() -> None:
     load_dotenv()
+    validate_required_env()
     body = generate_news()
     message = build_email(body)
     send_email(message)
