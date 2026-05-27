@@ -2,12 +2,12 @@ name: Daily AI News
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. These are 07:10, 07:25, 07:40, and 07:55 JST.
+    # GitHub Actions cron is UTC. These are 06:10, 06:25, 06:40, and 06:55 JST.
     # Multiple scheduled chances reduce the impact of GitHub dropping a single scheduled run.
-    - cron: "10 22 * * *"
-    - cron: "25 22 * * *"
-    - cron: "40 22 * * *"
-    - cron: "55 22 * * *"
+    - cron: "10 21 * * *"
+    - cron: "25 21 * * *"
+    - cron: "40 21 * * *"
+    - cron: "55 21 * * *"
   workflow_dispatch:
     inputs:
       force_send:
@@ -47,21 +47,21 @@ jobs:
           key: ai-news-sent-${{ steps.run-date.outputs.news_date }}
 
       - name: Skip duplicate daily send
-        if: steps.sent-marker.outputs.cache-hit == 'true' && !inputs.force_send
+        if: steps.sent-marker.outputs.cache-hit == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.force_send)
         run: echo "AI news email was already sent for $NEWS_DATE JST. Skipping this retry slot."
 
       - name: Set up Python
-        if: steps.sent-marker.outputs.cache-hit != 'true' || inputs.force_send
+        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        if: steps.sent-marker.outputs.cache-hit != 'true' || inputs.force_send
+        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
         run: pip install -r requirements.txt
 
       - name: Validate required secrets
-        if: steps.sent-marker.outputs.cache-hit != 'true' || inputs.force_send
+        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -82,7 +82,8 @@ jobs:
           fi
 
       - name: Send daily AI news
-        if: steps.sent-marker.outputs.cache-hit != 'true' || inputs.force_send
+        id: send-news
+        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
@@ -97,8 +98,22 @@ jobs:
           MAIL_SUBJECT: ${{ vars.MAIL_SUBJECT || 'AIニュース日次まとめ' }}
         run: python main.py
 
+      - name: Notify final scheduled failure
+        if: failure() && github.event_name == 'schedule' && github.event.schedule == '55 21 * * *' && steps.sent-marker.outputs.cache-hit != 'true'
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS || 'true' }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL || 'false' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          FAILURE_MAIL_SUBJECT: AIニュース送信失敗
+        run: python notify_failure.py
+
       - name: Create daily success marker
-        if: success() && (steps.sent-marker.outputs.cache-hit != 'true' || inputs.force_send)
+        if: success() && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         run: |
           mkdir -p .sent
           printf 'sent_at_utc=%s\nnews_date_jst=%s\nrun_id=%s\n' "$(date -u +%FT%TZ)" "$NEWS_DATE" "$GITHUB_RUN_ID" > ".sent/$NEWS_DATE.txt"
