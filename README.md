@@ -5,33 +5,42 @@ Gemini API with Google Search grounding is used to summarize the last 24 hours o
 ## Files
 
 - `main.py`: Generates the news summary and sends email.
+- `notify_failure.py`: Sends a fixed failure notification after the final scheduled retry fails.
 - `requirements.txt`: Python dependencies.
 - `.env.example`: Local environment variable template.
-- `.github/workflows/daily_news.yml`: Runs every day between 07:10 and 07:55 JST until one send succeeds.
+- `.github/workflows/daily_news.yml`: Runs every day between 06:10 and 06:55 JST until one send succeeds.
 
 ## Schedule
 
 The workflow has four scheduled trigger slots every morning:
 
 ```text
-07:10 JST
-07:25 JST
-07:40 JST
-07:55 JST
+06:10 JST
+06:25 JST
+06:40 JST
+06:55 JST
 ```
 
 In UTC cron, these are:
 
 ```text
-10 22 * * *
-25 22 * * *
-40 22 * * *
-55 22 * * *
+10 21 * * *
+25 21 * * *
+40 21 * * *
+55 21 * * *
 ```
 
 GitHub scheduled workflows can be delayed or dropped during high-load periods. Multiple trigger slots reduce the chance that a single dropped schedule prevents the daily email.
 
 The workflow stores a daily success marker after a successful send. Later slots on the same JST date restore that marker and skip sending, preventing duplicate daily emails.
+
+If the final scheduled slot at 06:55 JST also fails and no success marker exists, the workflow sends this failure notification email:
+
+```text
+メール送信に失敗しました。手動実行してください
+```
+
+If SMTP itself is unavailable or the SMTP credentials are invalid, the failure notification email can also fail because it uses the same SMTP settings.
 
 Manual runs include a `force_send` option. Leave it `false` for normal testing, or set it to `true` only when you intentionally want to resend even after today's success marker exists.
 
