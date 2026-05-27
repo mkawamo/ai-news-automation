@@ -7,7 +7,11 @@ Gemini API with Google Search grounding is used to summarize the last 24 hours o
 - `main.py`: Generates the news summary and sends email.
 - `requirements.txt`: Python dependencies.
 - `.env.example`: Local environment variable template.
-- `.github/workflows/daily_news.yml`: Runs every day at 07:00 JST.
+- `.github/workflows/daily_news.yml`: Runs every day at 07:10 JST.
+
+## Schedule
+
+The workflow runs every day at 07:10 JST (`10 22 * * *` in UTC). It intentionally avoids minute 00 because GitHub scheduled workflows can be delayed or dropped during top-of-hour peak load.
 
 ## Model
 
