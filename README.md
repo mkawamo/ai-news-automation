@@ -7,11 +7,33 @@ Gemini API with Google Search grounding is used to summarize the last 24 hours o
 - `main.py`: Generates the news summary and sends email.
 - `requirements.txt`: Python dependencies.
 - `.env.example`: Local environment variable template.
-- `.github/workflows/daily_news.yml`: Runs every day at 07:10 JST.
+- `.github/workflows/daily_news.yml`: Runs every day between 07:10 and 07:55 JST until one send succeeds.
 
 ## Schedule
 
-The workflow runs every day at 07:10 JST (`10 22 * * *` in UTC). It intentionally avoids minute 00 because GitHub scheduled workflows can be delayed or dropped during top-of-hour peak load.
+The workflow has four scheduled trigger slots every morning:
+
+```text
+07:10 JST
+07:25 JST
+07:40 JST
+07:55 JST
+```
+
+In UTC cron, these are:
+
+```text
+10 22 * * *
+25 22 * * *
+40 22 * * *
+55 22 * * *
+```
+
+GitHub scheduled workflows can be delayed or dropped during high-load periods. Multiple trigger slots reduce the chance that a single dropped schedule prevents the daily email.
+
+The workflow stores a daily success marker after a successful send. Later slots on the same JST date restore that marker and skip sending, preventing duplicate daily emails.
+
+Manual runs include a `force_send` option. Leave it `false` for normal testing, or set it to `true` only when you intentionally want to resend even after today's success marker exists.
 
 ## Model
 
