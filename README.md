@@ -34,6 +34,43 @@ If GitHub does not trigger the workflow at all, even the failure notification st
 
 Manual runs include a `force_send` option. Leave it `false` for normal testing, or set it to `true` only when you intentionally want to resend even after today's success marker exists.
 
+## External cron fallback
+
+For more reliable triggering, use an external cron service to call GitHub's workflow dispatch API. Recommended free or near-free options:
+
+- `cron-job.org`: Free HTTP cron service. Good first choice because it can send custom HTTP POST requests with headers and a JSON body.
+- `Google Cloud Scheduler`: Google Cloud gives each billing account 3 free Scheduler jobs per month. It requires a Google Cloud billing account, even when usage is inside the free tier.
+- `UptimeRobot`: Useful for monitoring and alerts. Its free plan is intended for non-commercial use, and it is better as a monitor than as the primary GitHub workflow trigger.
+
+### cron-job.org request
+
+Create a fine-grained GitHub personal access token with access only to this repository and `Actions: Read and write` permission. Store it only in the external cron service.
+
+Configure the cron job as an HTTP POST:
+
+```text
+URL: https://api.github.com/repos/mkawamo/ai-news-automation/actions/workflows/daily_news.yml/dispatches
+Method: POST
+Schedule: daily at 06:05 JST
+```
+
+Headers:
+
+```text
+Accept: application/vnd.github+json
+Authorization: Bearer YOUR_FINE_GRAINED_GITHUB_TOKEN
+X-GitHub-Api-Version: 2022-11-28
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{"ref":"main","inputs":{"force_send":"false"}}
+```
+
+The workflow's daily success marker still prevents duplicate emails if both external cron and GitHub's native schedule fire on the same day.
+
 ## Model
 
 The default model is `gemini-3.5-flash`. If the model is temporarily unavailable, the script retries and then falls back to `gemini-2.5-flash` and `gemini-2.0-flash`.
