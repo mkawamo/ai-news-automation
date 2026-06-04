@@ -35,35 +35,55 @@ jobs:
         run: |
           news_date=$(TZ=Asia/Tokyo date +%F)
           jst_time=$(TZ=Asia/Tokyo date +%H:%M)
+          jst_hour=$(TZ=Asia/Tokyo date +%H)
+          jst_minute=$(TZ=Asia/Tokyo date +%M)
+          should_run=false
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            should_run=true
+          elif [ "$jst_hour" = "06" ] || [ "$jst_hour" = "07" ]; then
+            should_run=true
+          elif [ "$jst_hour" = "08" ] && [ "$jst_minute" -le "30" ]; then
+            # Allow reasonable GitHub schedule delay, while blocking midnight or other stray firings.
+            should_run=true
+          fi
+
           echo "news_date=$news_date" >> "$GITHUB_OUTPUT"
           echo "jst_time=$jst_time" >> "$GITHUB_OUTPUT"
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
           echo "NEWS_DATE=$news_date" >> "$GITHUB_ENV"
           echo "JST_TIME=$jst_time" >> "$GITHUB_ENV"
           echo "Daily news date: $news_date $jst_time JST"
+          echo "Should run: $should_run"
+
+      - name: Skip scheduled run outside morning window
+        if: steps.run-date.outputs.should_run != 'true'
+        run: echo "Skipping scheduled run at $JST_TIME JST because it is outside the allowed 06:00-08:30 JST window."
 
       - name: Restore daily success marker
         id: sent-marker
+        if: steps.run-date.outputs.should_run == 'true'
         uses: actions/cache/restore@v5
         with:
           path: .sent/${{ steps.run-date.outputs.news_date }}.txt
           key: ai-news-sent-${{ steps.run-date.outputs.news_date }}
 
       - name: Skip duplicate daily send
-        if: steps.sent-marker.outputs.cache-hit == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.force_send)
+        if: steps.run-date.outputs.should_run == 'true' && steps.sent-marker.outputs.cache-hit == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.force_send)
         run: echo "AI news email was already sent for $NEWS_DATE JST. Skipping this retry slot."
 
       - name: Set up Python
-        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
+        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
+        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         run: pip install -r requirements.txt
 
       - name: Validate required secrets
-        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
+        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -85,7 +105,7 @@ jobs:
 
       - name: Send daily AI news
         id: send-news
-        if: steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send)
+        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
@@ -115,13 +135,13 @@ jobs:
         run: python notify_failure.py
 
       - name: Create daily success marker
-        if: success() && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
+        if: success() && steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         run: |
           mkdir -p .sent
           printf 'sent_at_utc=%s\nnews_date_jst=%s\njst_time=%s\nrun_id=%s\n' "$(date -u +%FT%TZ)" "$NEWS_DATE" "$JST_TIME" "$GITHUB_RUN_ID" > ".sent/$NEWS_DATE.txt"
 
       - name: Save daily success marker
-        if: success() && steps.sent-marker.outputs.cache-hit != 'true'
+        if: success() && steps.run-date.outputs.should_run == 'true' && steps.sent-marker.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: .sent/${{ steps.run-date.outputs.news_date }}.txt
