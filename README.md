@@ -26,6 +26,14 @@ The GitHub fallback cron is:
 
 GitHub scheduled workflows can be delayed or dropped during high-load periods. The external cron trigger gives the workflow a separate way to start. If cron-job.org fails or is delayed, the GitHub schedule fallback keeps retrying.
 
+As an additional guard, scheduled runs are allowed to send mail only in the JST morning window. `workflow_dispatch` runs are always allowed. This prevents stray GitHub schedule executions at midnight or other unexpected times from sending an email.
+
+Allowed scheduled send window:
+
+```text
+06:00-08:30 JST
+```
+
 The workflow stores a daily success marker after a successful send. Later triggers on the same JST date restore that marker and skip sending, preventing duplicate daily emails even if both services fire.
 
 If the final scheduled slot at 07:55 JST also fails and no success marker exists, the workflow sends this failure notification email:
