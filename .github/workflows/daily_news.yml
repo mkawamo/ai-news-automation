@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       force_send:
-        description: "Send even if today's success marker already exists"
+        description: "Send even outside the morning window and even if today's success marker already exists"
         required: false
         default: false
         type: boolean
@@ -37,14 +37,16 @@ jobs:
           jst_time=$(TZ=Asia/Tokyo date +%H:%M)
           jst_hour=$(TZ=Asia/Tokyo date +%H)
           jst_minute=$(TZ=Asia/Tokyo date +%M)
+          force_send="${{ inputs.force_send || false }}"
           should_run=false
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            should_run=true
-          elif [ "$jst_hour" = "06" ] || [ "$jst_hour" = "07" ]; then
+          if [ "$jst_hour" = "06" ] || [ "$jst_hour" = "07" ]; then
             should_run=true
           elif [ "$jst_hour" = "08" ] && [ "$jst_minute" -le "30" ]; then
-            # Allow reasonable GitHub schedule delay, while blocking midnight or other stray firings.
+            # Allow reasonable GitHub schedule delay, while blocking other stray firings.
+            should_run=true
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$force_send" = "true" ]; then
+            # Manual emergency execution can still be forced outside the normal delivery window.
             should_run=true
           fi
 
@@ -54,11 +56,12 @@ jobs:
           echo "NEWS_DATE=$news_date" >> "$GITHUB_ENV"
           echo "JST_TIME=$jst_time" >> "$GITHUB_ENV"
           echo "Daily news date: $news_date $jst_time JST"
+          echo "Force send: $force_send"
           echo "Should run: $should_run"
 
-      - name: Skip scheduled run outside morning window
+      - name: Skip run outside morning window
         if: steps.run-date.outputs.should_run != 'true'
-        run: echo "Skipping scheduled run at $JST_TIME JST because it is outside the allowed 06:00-08:30 JST window."
+        run: echo "Skipping run at $JST_TIME JST because it is outside the allowed 06:00-08:30 JST window. Use workflow_dispatch with force_send=true for manual emergency sending."
 
       - name: Restore daily success marker
         id: sent-marker
