@@ -3,10 +3,12 @@ name: Daily AI News
 on:
   schedule:
     # Fallback schedule when external cron does not trigger workflow_dispatch.
-    # GitHub Actions cron is UTC. These run every 5 minutes from 06:10 to 07:55 JST.
-    # The daily success marker prevents duplicate emails after the first successful send.
+    # GitHub Actions cron is UTC. Retry slots are nominally 06:10-07:55 JST.
+    # Delayed retry runs may send until 10:30 JST; the daily marker prevents duplicates.
     - cron: "10-55/5 21 * * *"
     - cron: "*/5 22 * * *"
+    # Independent check at 10:45 JST. If no success marker exists, send a failure notice.
+    - cron: "45 1 * * *"
   workflow_dispatch:
     inputs:
       force_send:
@@ -39,33 +41,48 @@ jobs:
           jst_minute=$(TZ=Asia/Tokyo date +%M)
           force_send="${{ inputs.force_send || false }}"
           should_run=false
+          is_failure_check=false
 
-          if [ "$jst_hour" = "06" ] || [ "$jst_hour" = "07" ]; then
-            should_run=true
-          elif [ "$jst_hour" = "08" ] && [ "$jst_minute" -le "30" ]; then
-            # Allow reasonable GitHub schedule delay, while blocking other stray firings.
-            should_run=true
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$force_send" = "true" ]; then
-            # Manual emergency execution can still be forced outside the normal delivery window.
-            should_run=true
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "45 1 * * *" ]; then
+            is_failure_check=true
+          fi
+
+          if [ "$is_failure_check" != "true" ]; then
+            case "$jst_hour" in
+              06|07|08|09)
+                should_run=true
+                ;;
+              10)
+                if [ "$jst_minute" -le "30" ]; then
+                  should_run=true
+                fi
+                ;;
+            esac
+
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$force_send" = "true" ]; then
+              # Manual emergency execution can be forced outside the normal delivery window.
+              should_run=true
+            fi
           fi
 
           echo "news_date=$news_date" >> "$GITHUB_OUTPUT"
           echo "jst_time=$jst_time" >> "$GITHUB_OUTPUT"
           echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+          echo "is_failure_check=$is_failure_check" >> "$GITHUB_OUTPUT"
           echo "NEWS_DATE=$news_date" >> "$GITHUB_ENV"
           echo "JST_TIME=$jst_time" >> "$GITHUB_ENV"
           echo "Daily news date: $news_date $jst_time JST"
           echo "Force send: $force_send"
           echo "Should run: $should_run"
+          echo "Failure check: $is_failure_check"
 
-      - name: Skip run outside morning window
-        if: steps.run-date.outputs.should_run != 'true'
-        run: echo "Skipping run at $JST_TIME JST because it is outside the allowed 06:00-08:30 JST window. Use workflow_dispatch with force_send=true for manual emergency sending."
+      - name: Skip run outside delivery window
+        if: steps.run-date.outputs.should_run != 'true' && steps.run-date.outputs.is_failure_check != 'true'
+        run: echo "Skipping run at $JST_TIME JST because it is outside the allowed 06:00-10:30 JST window. Use workflow_dispatch with force_send=true for manual emergency sending."
 
       - name: Restore daily success marker
         id: sent-marker
-        if: steps.run-date.outputs.should_run == 'true'
+        if: steps.run-date.outputs.should_run == 'true' || steps.run-date.outputs.is_failure_check == 'true'
         uses: actions/cache/restore@v5
         with:
           path: .sent/${{ steps.run-date.outputs.news_date }}.txt
@@ -76,13 +93,13 @@ jobs:
         run: echo "AI news email was already sent for $NEWS_DATE JST. Skipping this retry slot."
 
       - name: Set up Python
-        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
+        if: (steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))) || (steps.run-date.outputs.is_failure_check == 'true' && steps.sent-marker.outputs.cache-hit != 'true')
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
+        if: (steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))) || (steps.run-date.outputs.is_failure_check == 'true' && steps.sent-marker.outputs.cache-hit != 'true')
         run: pip install -r requirements.txt
 
       - name: Validate required secrets
@@ -123,8 +140,8 @@ jobs:
           MAIL_SUBJECT: ${{ vars.MAIL_SUBJECT || 'AIニュース日次まとめ' }}
         run: python main.py
 
-      - name: Notify final scheduled failure
-        if: failure() && github.event_name == 'schedule' && steps.run-date.outputs.jst_time == '07:55' && steps.sent-marker.outputs.cache-hit != 'true'
+      - name: Notify missing daily send
+        if: always() && steps.run-date.outputs.is_failure_check == 'true' && steps.sent-marker.outputs.cache-hit != 'true'
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
