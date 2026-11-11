@@ -25,9 +25,12 @@ def build_email() -> EmailMessage:
     message = EmailMessage()
     message["From"] = mail_from
     message["To"] = mail_to
+    date_label = f"{now:%Y-%m-%d}"
+    subject_base = os.getenv("FAILURE_MAIL_SUBJECT") or "AIニュース送信失敗"
     message["Subject"] = (
-        os.getenv("FAILURE_MAIL_SUBJECT")
-        or f"AIニュース送信失敗（{now:%Y-%m-%d}）"
+        subject_base
+        if date_label in subject_base
+        else f"{subject_base}（{date_label}）"
     )
     message["Date"] = format_datetime(now)
     message["Message-ID"] = make_msgid()
