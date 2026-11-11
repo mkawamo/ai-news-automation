@@ -128,7 +128,8 @@ jobs:
         if: steps.run-date.outputs.should_run == 'true' && (steps.sent-marker.outputs.cache-hit != 'true' || (github.event_name == 'workflow_dispatch' && inputs.force_send))
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+          GEMINI_API_VERSION: ${{ vars.GEMINI_API_VERSION || 'v1beta' }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS || 'true' }}
@@ -137,7 +138,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
-          MAIL_SUBJECT: ${{ vars.MAIL_SUBJECT || 'AIニュース日次まとめ' }}
+          MAIL_SUBJECT: ${{ vars.MAIL_SUBJECT }}
         run: python main.py
 
       - name: Notify missing daily send
@@ -151,7 +152,7 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
-          FAILURE_MAIL_SUBJECT: AIニュース送信失敗
+          FAILURE_MAIL_SUBJECT: ${{ vars.FAILURE_MAIL_SUBJECT }}
         run: python notify_failure.py
 
       - name: Create daily success marker
