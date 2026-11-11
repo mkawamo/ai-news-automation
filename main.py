@@ -169,7 +169,13 @@ def build_email(body: str) -> EmailMessage:
     mail_from = require_env("MAIL_FROM")
     mail_to = require_env("MAIL_TO")
     now = datetime.now(JST)
-    subject = os.getenv("MAIL_SUBJECT") or f"AIニュース日次まとめ（{now:%Y-%m-%d}）"
+    date_label = f"{now:%Y-%m-%d}"
+    subject_base = os.getenv("MAIL_SUBJECT") or "AIニュース日次まとめ"
+    subject = (
+        subject_base
+        if date_label in subject_base
+        else f"{subject_base}（{date_label}）"
+    )
 
     message = EmailMessage()
     message["From"] = mail_from
