@@ -88,7 +88,7 @@ Claude
 def parse_model_list() -> list[str]:
     configured = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     models = [model.strip() for model in configured.split(",") if model.strip()]
-    for fallback_model in FALLBACK_MODELS:
+    for fallback_model in (DEFAULT_MODEL, *FALLBACK_MODELS):
         if fallback_model not in models:
             models.append(fallback_model)
     return models
