@@ -2,6 +2,7 @@ import os
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import format_datetime, make_msgid
 
 from dotenv import load_dotenv
 
@@ -24,10 +25,12 @@ def build_email() -> EmailMessage:
     message = EmailMessage()
     message["From"] = mail_from
     message["To"] = mail_to
-    message["Subject"] = os.getenv(
-        "FAILURE_MAIL_SUBJECT",
-        f"AIニュース送信失敗（{now:%Y-%m-%d}）",
+    message["Subject"] = (
+        os.getenv("FAILURE_MAIL_SUBJECT")
+        or f"AIニュース送信失敗（{now:%Y-%m-%d}）"
     )
+    message["Date"] = format_datetime(now)
+    message["Message-ID"] = make_msgid()
     message.set_content("メール送信に失敗しました。手動実行してください")
     return message
 
