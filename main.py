@@ -3,6 +3,7 @@ import smtplib
 import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from email.utils import format_datetime, make_msgid
 
 from dotenv import load_dotenv
 from google import genai
@@ -10,8 +11,9 @@ from google.genai import errors, types
 
 
 JST = timezone(timedelta(hours=9))
-DEFAULT_MODEL = "gemini-3.5-flash"
-FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash")
+DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_API_VERSION = "v1beta"
+FALLBACK_MODELS = ("gemini-2.5-flash",)
 MAX_GEMINI_ATTEMPTS = 3
 REQUIRED_ENV_VARS = (
     "GEMINI_API_KEY",
@@ -109,6 +111,13 @@ def generate_with_model(client: genai.Client, model: str, prompt: str) -> str:
     return text.strip()
 
 
+def is_quota_exhausted(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return getattr(exc, "status_code", None) == 429 and (
+        "quota" in message or "resource_exhausted" in message
+    )
+
+
 def is_retryable_gemini_error(exc: Exception) -> bool:
     status_code = getattr(exc, "status_code", None)
     if status_code in {429, 500, 502, 503, 504}:
@@ -120,7 +129,11 @@ def is_retryable_gemini_error(exc: Exception) -> bool:
 
 def generate_news() -> str:
     api_key = require_env("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
+    api_version = os.getenv("GEMINI_API_VERSION", DEFAULT_API_VERSION)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(api_version=api_version),
+    )
     prompt = build_prompt()
     last_error: Exception | None = None
 
@@ -131,6 +144,13 @@ def generate_news() -> str:
                 return generate_with_model(client, model, prompt)
             except errors.APIError as exc:
                 last_error = exc
+                if is_quota_exhausted(exc):
+                    print(
+                        f"Gemini model {model} quota is exhausted; "
+                        "moving to the next fallback model."
+                    )
+                    break
+
                 if not is_retryable_gemini_error(exc) or attempt == MAX_GEMINI_ATTEMPTS:
                     print(f"Gemini model {model} failed: {exc}")
                     break
@@ -148,15 +168,15 @@ def generate_news() -> str:
 def build_email(body: str) -> EmailMessage:
     mail_from = require_env("MAIL_FROM")
     mail_to = require_env("MAIL_TO")
-    subject = os.getenv(
-        "MAIL_SUBJECT",
-        f"AIニュース日次まとめ（{datetime.now(JST):%Y-%m-%d}）",
-    )
+    now = datetime.now(JST)
+    subject = os.getenv("MAIL_SUBJECT") or f"AIニュース日次まとめ（{now:%Y-%m-%d}）"
 
     message = EmailMessage()
     message["From"] = mail_from
     message["To"] = mail_to
     message["Subject"] = subject
+    message["Date"] = format_datetime(now)
+    message["Message-ID"] = make_msgid()
     message.set_content(body)
     return message
 
